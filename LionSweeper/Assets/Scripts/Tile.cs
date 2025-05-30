@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -37,9 +38,8 @@ public class Tile : MonoBehaviour
         if (GameManager.Instance.IsGameEnded()) return;
 
         // Clic gauche : révéler
-        if (Input.GetMouseButtonDown(0) && !isRevealed && !isFlagged)
+        if (Input.GetMouseButtonDown(0) && !isFlagged)
         {
-            Reveal();
             GameManager.Instance.OnTileClicked(this);
         }
 

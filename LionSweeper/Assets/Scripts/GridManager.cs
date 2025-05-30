@@ -1,4 +1,8 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
+
 
 /// <summary>
 /// Gère la génération de la grille de jeu et la pose des lions.
@@ -13,11 +17,25 @@ public class GridManager : MonoBehaviour
 
     private Tile[,] grid;
 
-    private void Start()
+    /// <summary>
+    /// Change les dimentions de la grille
+    /// </summary>
+    /// <param name="width">Largeur de la grille</param>
+    /// <param name="height">hauteur de la grille</param>
+    /// <param name="numberOfLions">le nombre de mines</param>
+    public void SetGridSize(int width, int height, int numberOfLions)
     {
-        GenerateGrid();
+        if (width <= 0 || height <= 0 || numberOfLions <= 0)
+            throw new ArgumentOutOfRangeException("Tous les paramètres doivent être superieur à 0");
+
+        this.width = width;
+        this.height = height;
+        this.numberOfLions = numberOfLions;
     }
 
+    /// <summary>
+    /// Génère la grille selon les dimentions
+    /// </summary>
     public void GenerateGrid()
     {
         grid = new Tile[width, height];
@@ -45,13 +63,29 @@ public class GridManager : MonoBehaviour
         CenterCamera();
     }
 
+    /// <summary>
+    /// Fusion des fonctions GenerateGrid et SetGridSize
+    /// Change les dimentions de la grille avant de la créer
+    /// </summary>
+    /// <param name="width">Largeur de la grille</param>
+    /// <param name="height">hauteur de la grille</param>
+    /// <param name="numberOfLions">le nombre de mines</param>
+    public void GenerateGrid(int width, int height, int numberOfLions)
+    {
+        SetGridSize(width, height, numberOfLions);
+        GenerateGrid();
+    }
+
+    /// <summary>
+    /// Place les mines dans la grille
+    /// </summary>
     private void PlaceLions()
     {
         int placed = 0;
         while (placed < numberOfLions)
         {
-            int x = Random.Range(0, width);
-            int y = Random.Range(0, height);
+            int x = UnityEngine.Random.Range(0, width);
+            int y = UnityEngine.Random.Range(0, height);
 
             Tile tile = grid[x, y];
 
@@ -63,6 +97,37 @@ public class GridManager : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Retourne la liste des tuiles adjacentes à une tuile donnée (au maximum 8).
+    /// </summary>
+    /// <param name="tile">La tuile dont on veut les voisins.</param>
+    /// <returns>Liste des tuiles adjacentes.</returns>
+    public List<Tile> GetAdjacentTiles(Tile tile)
+    {
+        List<Tile> neighbors = new List<Tile>();
+
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                if (dx == 0 && dy == 0) continue;
+
+                int nx = tile.x + dx;
+                int ny = tile.y + dy;
+
+                if (IsInBounds(nx, ny))
+                {
+                    neighbors.Add(grid[nx, ny]);
+                }
+            }
+        }
+
+        return neighbors;
+    }
+
+    /// <summary>
+    /// Calcule le nombre de lions adjacents à chaque tuile.
+    /// </summary>
     private void CalculateAdjacents()
     {
         for (int x = 0; x < width; x++)
@@ -73,27 +138,16 @@ public class GridManager : MonoBehaviour
 
                 if (tile.isLion)
                 {
-                    tile.adjacentLions = -1; // Juste pour marquer un lion
+                    tile.adjacentLions = -1; // Marque une tuile avec un lion
                     continue;
                 }
 
                 int count = 0;
 
-                // Vérifie les 8 cases autour
-                for (int dx = -1; dx <= 1; dx++)
+                foreach (Tile neighbor in GetAdjacentTiles(tile))
                 {
-                    for (int dy = -1; dy <= 1; dy++)
-                    {
-                        if (dx == 0 && dy == 0) continue;
-
-                        int checkX = x + dx;
-                        int checkY = y + dy;
-
-                        if (IsInBounds(checkX, checkY) && grid[checkX, checkY].isLion)
-                        {
-                            count++;
-                        }
-                    }
+                    if (neighbor.isLion)
+                        count++;
                 }
 
                 tile.adjacentLions = count;
@@ -101,6 +155,13 @@ public class GridManager : MonoBehaviour
         }
     }
 
+
+    /// <summary>
+    /// Trouve si un couple de coordonnnées existe dans la grille
+    /// </summary>
+    /// <param name="x">la coordonnée en x</param>
+    /// <param name="y">la coordonnée en y</param>
+    /// <returns>Si la paire de coordonnée est dans la grille</returns>
     private bool IsInBounds(int x, int y)
     {
         return x >= 0 && y >= 0 && x < width && y < height;
@@ -117,6 +178,21 @@ public class GridManager : MonoBehaviour
     }
 
     /// <summary>
+    /// Révèle tous les lions
+    /// </summary>
+    public void RevealAllLions()
+    {
+        foreach (Tile t in FindObjectsOfType<Tile>())
+        {
+            if (t.isLion)
+            {
+                t.Reveal();
+            }
+        }
+    }
+
+
+    /// <summary>
     /// Centre la caméra au centre de la grille
     /// </summary>
     private void CenterCamera()
@@ -125,6 +201,70 @@ public class GridManager : MonoBehaviour
         float centerY = (height - 1) / 2f;
 
         Camera.main.transform.position = new Vector3(centerX, centerY, -10f); // Z = -10 pour caméra ortho
+    }
+
+
+    /// <summary>
+    /// Révèle récursivement les tuiles vides connectées.
+    /// Utilise une approche itérative pour éviter les appels récursifs infinis.
+    /// </summary>
+    public void FloodReveal(int startX, int startY)
+    {
+        Queue<Tile> toCheck = new Queue<Tile>();
+        HashSet<Tile> visited = new HashSet<Tile>();
+
+        Tile startTile = GetTileAt(startX, startY);
+        toCheck.Enqueue(startTile);
+        visited.Add(startTile);
+
+        while (toCheck.Count > 0)
+        {
+            Tile current = toCheck.Dequeue();
+
+            current.Reveal();
+
+            if (current.adjacentLions == 0)
+            {
+                // Explore les 8 voisines
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    for (int dy = -1; dy <= 1; dy++)
+                    {
+                        int nx = current.x + dx;
+                        int ny = current.y + dy;
+
+                        // Ignore le centre
+                        if (dx == 0 && dy == 0) continue;
+
+                        Tile neighbor = GetTileAt(nx, ny);
+                        if (neighbor == null) continue;
+
+                        if (!neighbor.isRevealed && !neighbor.isLion && !visited.Contains(neighbor))
+                        {
+                            visited.Add(neighbor);
+                            toCheck.Enqueue(neighbor);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Tente de révéler automatiquement les cases autour si le bon nombre de drapeaux est posé.
+    /// </summary>
+    public void TryAutoReveal(Tile centerTile)
+    {
+        var neighbors = GetAdjacentTiles(centerTile);
+        int flags = neighbors.Count(t => t.isFlagged);
+
+        if (flags == centerTile.adjacentLions)
+        {
+            foreach (var neighbor in neighbors)
+            {
+                GameManager.Instance.OnTileClicked(neighbor);
+            }
+        }
     }
 
 }
